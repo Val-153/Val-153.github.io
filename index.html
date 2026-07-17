@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Tide</title>
+<meta name="theme-color" content="#10161D" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Tide" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Karla:wght@400;500;600;700;800&display=swap');
+  :root { color-scheme: dark; }
+  html, body { margin: 0; padding: 0; background: #10161D; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  input, textarea { -webkit-appearance: none; color-scheme: dark; }
+  input:focus, textarea:focus, button:focus-visible { outline: 2px solid #8FBFC755; outline-offset: 1px; }
+  button { background: none; border: none; padding: 0; cursor: pointer; }
+</style>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+
+/* ------------------------------ design tokens ------------------------------ */
+const C = {
+  sand: "#10161D",   // page background — deep ocean night
+  card: "#1A222B",
+  ink: "#E9EEF3",
+  mist: "#8C9DAB",
+  line: "#2B3641",
+  sea: "#8FBFC7",
+  full: "#84B491",
+  mid: "#D8B36E",
+  low: "#93B3CF",
+  lowBg: "#1D2836",
+  fullBg: "#1E2B25",
+  midBg: "#2B261A",
+};
+const serif = "'Cormorant Garamond', Georgia, 'Times New Roman', serif";
+const sans = "'Karla', -apple-system, 'Segoe UI', sans-serif";
+
+/* ------------------------------ icons (inline, no deps) ------------------------------ */
+const Svg = ({ size = 20, color = "currentColor", children, sw = 2 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+    strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+);
+const WavesI = (p) => <Svg {...p}><path d="M2 7q2.75-2.4 5.5 0t5.5 0t5.5 0t5.5 0" /><path d="M2 12q2.75-2.4 5.5 0t5.5 0t5.5 0t5.5 0" /><path d="M2 17q2.75-2.4 5.5 0t5.5 0t5.5 0t5.5 0" /></Svg>;
+const BowlI = (p) => <Svg {...p}><path d="M4 11h16" /><path d="M5 11a7 7 0 0 0 14 0" /><path d="M9 7c0-1.5 1-2 1-3M14 7c0-1.5 1-2 1-3" /></Svg>;
+const ActivityI = (p) => <Svg {...p}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></Svg>;
+const SlidersI = (p) => <Svg {...p}><line x1="4" y1="8" x2="20" y2="8" /><circle cx="9" cy="8" r="2.2" fill="currentColor" stroke="none" /><line x1="4" y1="16" x2="20" y2="16" /><circle cx="15" cy="16" r="2.2" fill="currentColor" stroke="none" /></Svg>;
+const SunI = (p) => <Svg {...p}><circle cx="12" cy="12" r="4" /><line x1="12" y1="2" x2="12" y2="4.5" /><line x1="12" y1="19.5" x2="12" y2="22" /><line x1="2" y1="12" x2="4.5" y2="12" /><line x1="19.5" y1="12" x2="22" y2="12" /><line x1="4.9" y1="4.9" x2="6.6" y2="6.6" /><line x1="17.4" y1="17.4" x2="19.1" y2="19.1" /><line x1="4.9" y1="19.1" x2="6.6" y2="17.4" /><line x1="17.4" y1="6.6" x2="19.1" y2="4.9" /></Svg>;
+const MoonI = (p) => <Svg {...p}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></Svg>;
+const CheckI = (p) => <Svg {...p} sw={3}><polyline points="20 6 9 17 4 12" /></Svg>;
+const ChevD = (p) => <Svg {...p}><polyline points="6 9 12 15 18 9" /></Svg>;
+const ChevU = (p) => <Svg {...p}><polyline points="18 15 12 9 6 15" /></Svg>;
+const PlusI = (p) => <Svg {...p}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></Svg>;
+
+/* ------------------------------ storage (this device) ------------------------------ */
+const KEY = "tide-state-v1";
+const DEFAULT_STATE = {
+  settings: { lastPeriodStart: "", cycleLen: 35, periodLen: 7, cleanEveryDays: 7, prepEveryDays: 3 },
+  days: {},
+  workouts: { lastType: null, history: [] },
+  prep: { lastDate: "" },
+  clean: { lastDate: "" },
+  weights: [],
+};
+function loadState() {
+  try {
+    const v = localStorage.getItem(KEY);
+    if (v) return { ...DEFAULT_STATE, ...JSON.parse(v) };
+  } catch (e) {}
+  return DEFAULT_STATE;
+}
+function saveState(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} }
+
+/* ------------------------------ dates ------------------------------ */
+const pad = (n) => String(n).padStart(2, "0");
+const keyOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const todayKey = () => keyOf(new Date());
+const parseKey = (k) => { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d); };
+const daysBetween = (a, b) => Math.round((b - a) / 86400000);
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const niceDate = (d) => d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+
+/* ------------------------------ cycle ------------------------------ */
+function cycleInfo(settings, today = new Date()) {
+  if (!settings.lastPeriodStart) return null;
+  const start = parseKey(settings.lastPeriodStart);
+  const day = daysBetween(start, today) + 1;
+  if (day < 1) return null;
+  const expectedNext = addDays(start, Number(settings.cycleLen));
+  const toNext = daysBetween(today, expectedNext);
+  let phase, pmdd = false, adj = 0, note = "";
+  if (day <= Number(settings.periodLen)) {
+    phase = "Menstrual"; adj = day <= 2 ? -2 : -1;
+    note = "Heaviest days ask for the gentlest plans.";
+  } else if (toNext <= 0) {
+    phase = "Late luteal · period due"; pmdd = true; adj = -2;
+    note = "Period may start any day — treat today as low-reserve.";
+  } else if (toNext <= 10) {
+    phase = "Late luteal"; pmdd = true; adj = -2;
+    note = "PMDD window (estimate). Energy dips here are physiology, not failure.";
+  } else if (toNext <= 14) {
+    phase = "Luteal"; adj = -1;
+    note = "Post-ovulation dip is normal for you — plan slightly under capacity.";
+  } else if (toNext <= 17) {
+    phase = "Ovulation (est.)"; adj = 0;
+  } else {
+    phase = "Follicular"; adj = 1;
+    note = "Usually your strongest stretch — good window for full sessions.";
+  }
+  return { day, phase, pmdd, adj, note, toNext };
+}
+
+/* ------------------------------ engine ------------------------------ */
+const TIERS = {
+  full: { name: "Full tide", color: C.full, bg: C.fullBg, line: "Use the energy — without overdrawing it." },
+  mid:  { name: "Mid tide",  color: C.mid,  bg: C.midBg,  line: "Steady pace. Core moves only, skip the extras." },
+  low:  { name: "Low tide",  color: C.low,  bg: C.lowBg,  line: "Scope down on purpose. Rest is part of the system." },
+};
+
+function computeTier(ci, cycle) {
+  const reasons = [];
+  let score = 0;
+  const e = ci.energy ?? 3, m = ci.mood ?? 3, a = ci.anxiety ?? 2;
+  score += e * 2;
+  reasons.push(e >= 4 ? `Energy ${e}/5 — real capacity today.` : e <= 2 ? `Energy ${e}/5 — the main constraint today.` : `Energy ${e}/5 — workable middle.`);
+  score += m;
+  if (m <= 2) reasons.push(`Mood ${m}/5 — keep wins small and visible; movement and light help more than pushing.`);
+  if (a >= 4) { score -= 1; reasons.push(`Anxiety ${a}/5 — a brisk 15–20 min walk is one of the most reliable fast-acting reducers; heavy cognitive load gets trimmed.`); }
+  if (ci.sleepH != null && ci.sleepH !== "") {
+    const h = Number(ci.sleepH);
+    if (h >= 7) { score += 1; reasons.push(`${h}h sleep — full deck of executive function.`); }
+    else if (h < 6) { score -= 2; reasons.push(`${h}h sleep — focus and impulse control run degraded; the plan protects basics only.`); }
+    else reasons.push(`${h}h sleep — passable, not full reserve.`);
+  }
+  if (ci.rested) score += 1;
+  if (cycle) { score += cycle.adj; reasons.push(`Cycle day ${cycle.day} · ${cycle.phase}. ${cycle.note || ""}`.trim()); }
+  const w = ci.weather || {};
+  if (w.heat) { score -= 1; reasons.push("Heat — strength moves to the coolest hours; hydration up."); }
+  if (w.smog) { score -= 1; reasons.push("Smog — walking goes to the treadmill, windows closed while training."); }
+  if (w.pressure) { score -= 1; reasons.push("Pressure/storm — headaches and drag are expected, not imagined."); }
+  if (w.rain) reasons.push("Rain — treadmill day; nothing else changes.");
+  const tier = score >= 13 ? "full" : score >= 8 ? "mid" : "low";
+  return { tier, score, reasons };
+}
+
+/* ------------------------------ plan ------------------------------ */
+const SPLIT = ["Lower A", "Upper", "Lower B"];
+function nextSplit(lastType) {
+  const i = SPLIT.indexOf(lastType);
+  return SPLIT[(i + 1) % SPLIT.length] || SPLIT[0];
+}
+function strengthThisWeek(history, today = new Date()) {
+  const start = addDays(today, -6);
+  return history.filter((h) => parseKey(h.date) >= start).length;
+}
+
+function makePlan(tier, ctx) {
+  const t = [];
+  const push = (section, id, label, detail) => t.push({ section, id, label, detail });
+
+  if (ctx.strengthDue) {
+    if (tier === "full") {
+      push("Move", "floor", "Floor reset — 6–8 min", "Vacuum-mop the mat zone + ~0.5 m buffer, lay the mats. It's the first exercise of the session, not a chore before it.");
+      push("Move", "strength", `Strength — ${ctx.split}`, "60–90 min at your pace. Best window ~16:00–19:00: past the midday slump, ≥3h before lights-out.");
+    } else if (tier === "mid") {
+      push("Move", "floor", "Floor reset — 6–8 min", "Mat zone + buffer only. Timer on, music on.");
+      push("Move", "strength", `Short strength — ${ctx.split}`, "~40 min: compound lifts only, drop the accessories. A shorter session keeps the rhythm alive.");
+    } else {
+      push("Move", "mobility", "Mobility / stretch — 10–15 min (optional)", "Standing or on-the-bed routine — no floor contact needed today.");
+    }
+  } else if (tier !== "low") {
+    push("Move", "mobility", "Mobility — 10 min (optional)", "Rest day for strength; keep joints happy.");
+  }
+  const steps = tier === "full" ? "12–15k steps" : tier === "mid" ? "8–10k steps" : "One short walk, 15–20 min";
+  push("Move", "walk", steps, tier === "low"
+    ? (ctx.anxietyHigh ? "Even one lap helps — brisk walking is a proven fast anxiety-reducer." : "No target today. A short walk counts as a win.")
+    : "Split into 2–3 treadmill blocks. Your show/audiobook plays only while walking.");
+  push("Move", "slump", "10-min walk after lunch", "Counters the ~12:00 slump better than pushing through it.");
+
+  push("Fuel", "breakfast", "Protein breakfast within the first hour", "Open Meals — it's already filtered to today's effort level.");
+  if (tier === "low") push("Fuel", "nocook", "No-cook day", "Assemble from prep: eggs, yogurt, bread, cured salmon, tuna, fruit. Zero stove guilt.");
+  if (ctx.prepDue && tier !== "low") {
+    push("Fuel", "prep", "Prep session — ~40 min", "Boil 6–8 eggs · bake a chicken/turkey batch · wash & chop the veg box (peel cucumbers) · rinse fruit/berries. Grain cooks fresh in 15–20 min at mealtime.");
+  }
+
+  if (ctx.cleanDue) {
+    if (tier === "full") push("Home", "clean", "Home reset — 30–40 min (or 2×15)", "Timer + playlist. Zones, not perfection: floors first — they unlock training.");
+    else if (tier === "mid") push("Home", "clean", "Home reset — one 15-min zone", "One zone only. The rest rolls to the next fuller day.");
+  }
+
+  const mind = tier === "full" ? "Deep block — 45–60 min" : tier === "mid" ? "Focused block — 20–30 min" : "10 min light reading, or audiobook on the walk";
+  push("Mind", "learn", mind, "Course / career / reading — one block, one topic.");
+
+  push("Wind-down", "sleep", "Dim by 23:00 · lights out by 24:00", ctx.pmdd ? "PMDD window: an earlier wind-down pays double here. Wake target 7:00–9:00." : "Wake target 7:00–9:00.");
+  return t;
+}
+
+/* ------------------------------ meals ------------------------------ */
+const STAPLES = [
+  ["eggs", "Eggs"], ["poultry", "Chicken / turkey (raw)"], ["batch", "Cooked protein (batch)"],
+  ["curd", "Cottage cheese"], ["yogurt", "Greek yogurt"], ["oats", "Oats"], ["grain", "Grain (buckwheat/bulgur/rice…)"],
+  ["bread", "Bread / lavash"], ["veg", "Veg (prepped)"], ["fruit", "Fruit / berries"],
+  ["salmon", "Cured salmon"], ["tuna", "Canned tuna"], ["cheese", "Cheese"], ["milk", "Milk (lactose-free)"],
+  ["riceflour", "Rice flour"], ["banana", "Banana"],
+];
+const EFFORT = { none: 0, quick: 1, cook: 2, bake: 3 };
+const EFFORT_LABEL = { none: "no-cook", quick: "quick", cook: "cook", bake: "bake" };
+const MEALS = [
+  { n: "Eggs & avocado toast", t: "breakfast", e: "quick", taste: "savory", needs: ["eggs", "bread"], k: 350 },
+  { n: "Warm porridge, fruit & nuts", t: "breakfast", e: "cook", taste: "sweet", needs: ["oats", "fruit", "eggs"], k: 350, note: "Whisk in 2 egg whites while it cooks." },
+  { n: "Lavash wrap: egg, cheese, tomato", t: "breakfast", e: "quick", taste: "savory", needs: ["eggs", "bread", "cheese", "veg"], k: 350 },
+  { n: "Spinach & cheese omelet + toast", t: "breakfast", e: "quick", taste: "savory", needs: ["eggs", "cheese", "veg", "bread"], k: 350 },
+  { n: "Rice-flour crepes, cottage cheese & fruit", t: "breakfast", e: "cook", taste: "sweet", needs: ["eggs", "milk", "riceflour", "curd"], k: 350 },
+  { n: "Lazy chocolate overnight oats & cherry", t: "breakfast", e: "none", taste: "sweet", needs: ["oats", "yogurt", "milk", "fruit"], k: 350, note: "Assemble the night before — zero-effort morning." },
+  { n: "Flax porridge with fruit", t: "breakfast", e: "quick", taste: "sweet", needs: ["fruit"], k: 350 },
+  { n: "Oat pancakes with berries", t: "breakfast", e: "cook", taste: "sweet", needs: ["eggs", "oats", "milk", "fruit"], k: 350 },
+  { n: "Syrniki (rice-flour)", t: "breakfast", e: "cook", taste: "sweet", needs: ["curd", "eggs", "riceflour"], k: 350 },
+  { n: "Ovsyanoblin — sweet or ham & cheese", t: "breakfast", e: "quick", taste: "savory", needs: ["oats", "eggs"], k: 350, note: "Sweet: fruit + yogurt. Savory: cheese + chicken ham." },
+  { n: "Fruit / berries, 100–150 g", t: "snack", e: "none", taste: "sweet", needs: ["fruit"], k: 150 },
+  { n: "Toast, peanut butter & banana", t: "snack", e: "none", taste: "sweet", needs: ["bread", "banana"], k: 180 },
+  { n: "Rice-cake & yogurt layered cake", t: "snack", e: "none", taste: "sweet", needs: ["yogurt", "fruit"], k: 180 },
+  { n: "Tuna & egg bruschetta", t: "snack", e: "none", taste: "savory", needs: ["bread", "tuna", "eggs"], k: 180, note: "Needs a boiled egg from prep." },
+  { n: "Protein ice cream (blender)", t: "snack", e: "quick", taste: "sweet", needs: ["milk", "banana"], k: 200, note: "Frozen banana + protein scoop." },
+  { n: "Oat-banana cookies (batch)", t: "snack", e: "bake", taste: "sweet", needs: ["oats", "banana", "milk"], k: 180, note: "Bake once, snack for days." },
+  { n: "Cottage-cheese casserole, 100 g", t: "snack", e: "bake", taste: "sweet", needs: ["curd", "eggs"], k: 180 },
+  { n: "Buckwheat bowl: batch protein + veg", t: "lunch", e: "quick", taste: "savory", needs: ["batch", "grain", "veg"], k: 400, note: "From prep — assembly only." },
+  { n: "Chicken & buckwheat, cooked fresh", t: "lunch", e: "cook", taste: "savory", needs: ["poultry", "grain", "veg"], k: 400 },
+  { n: "Cured salmon / tuna bowl + grain", t: "lunch", e: "quick", taste: "savory", needs: ["salmon", "grain", "veg"], k: 400, note: "No fish cooking — cured or canned only." },
+  { n: "Couscous with veg + boiled egg", t: "lunch", e: "quick", taste: "savory", needs: ["grain", "veg", "eggs"], k: 400 },
+  { n: "Bulgur, egg & cheese skillet + salad", t: "lunch", e: "quick", taste: "savory", needs: ["grain", "eggs", "cheese", "veg"], k: 400 },
+  { n: "Zucchini fritters + egg + salad", t: "lunch", e: "cook", taste: "savory", needs: ["veg", "eggs", "riceflour"], k: 400 },
+  { n: "Quinoa bowl: egg, broccoli, avocado", t: "lunch", e: "cook", taste: "savory", needs: ["grain", "eggs", "veg"], k: 400 },
+  { n: "Zucchini-crust pizza with chicken", t: "lunch", e: "bake", taste: "savory", needs: ["veg", "eggs", "cheese", "poultry"], k: 400, note: "Full-tide cooking-for-fun." },
+  { n: "Chopped chicken cutlets + rice + veg", t: "lunch", e: "cook", taste: "savory", needs: ["poultry", "eggs", "cheese", "grain"], k: 400, note: "Doubles as prep — cutlets keep 2–3 days." },
+  { n: "Sheet-pan chicken breast & veggies", t: "dinner", e: "bake", taste: "savory", needs: ["poultry", "veg"], k: 300, note: "Make extra — tomorrow's protein." },
+  { n: "Veggie omelet with cheese", t: "dinner", e: "quick", taste: "savory", needs: ["eggs", "veg", "cheese"], k: 350 },
+  { n: "Tuna, corn & veg salad", t: "dinner", e: "none", taste: "savory", needs: ["tuna", "veg"], k: 350 },
+  { n: "Cured salmon, avocado & egg salad", t: "dinner", e: "none", taste: "savory", needs: ["salmon", "veg", "eggs"], k: 350 },
+  { n: "Greek salad + boiled egg", t: "dinner", e: "none", taste: "savory", needs: ["veg", "cheese", "eggs"], k: 350 },
+  { n: "Spring rolls with ready protein", t: "dinner", e: "quick", taste: "savory", needs: ["batch", "veg"], k: 350, note: "Rice paper + whatever protein is prepped." },
+  { n: "Chicken & corn salad (batch chicken)", t: "dinner", e: "none", taste: "savory", needs: ["batch", "veg", "yogurt", "eggs"], k: 350 },
+  { n: "Baked chicken, tomato & cheese pockets", t: "dinner", e: "bake", taste: "savory", needs: ["poultry", "cheese", "veg"], k: 350 },
+  { n: "Shrimp salad", t: "dinner", e: "cook", taste: "savory", needs: ["veg", "eggs"], k: 350, note: "Shrimp cook in minutes, minimal smell." },
+  { n: "Veal & feta salad", t: "dinner", e: "cook", taste: "savory", needs: ["veg", "cheese"], k: 350 },
+];
+
+/* ------------------------------ atoms ------------------------------ */
+function Dots({ value, onChange, color = C.sea }) {
+  return (
+    <div style={{ display: "flex", gap: 8 }}>
+      {[1, 2, 3, 4, 5].map((v) => (
+        <button key={v} onClick={() => onChange(v)}
+          style={{
+            width: 36, height: 36, borderRadius: 99, display: "flex", alignItems: "center", justifyContent: "center",
+            background: value >= v ? color : "transparent",
+            border: `1.5px solid ${value >= v ? color : C.line}`,
+            color: value >= v ? "#10161D" : C.mist,
+            fontFamily: sans, fontSize: 13, fontWeight: 700, transition: "all .15s",
+          }}>{v}</button>
+      ))}
+    </div>
+  );
+}
+function Chip({ active, onClick, children }) {
+  return (
+    <button onClick={onClick}
+      style={{
+        padding: "6px 12px", borderRadius: 99,
+        background: active ? C.ink : "transparent",
+        border: `1.5px solid ${active ? C.ink : C.line}`,
+        color: active ? C.sand : C.mist, fontFamily: sans, fontSize: 12.5, fontWeight: 700, transition: "all .15s",
+      }}>{children}</button>
+  );
+}
+function Field({ label, children }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: 1.2, textTransform: "uppercase", color: C.mist, marginBottom: 8, fontWeight: 800 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+function Card({ children, style }) {
+  return <div style={{ borderRadius: 18, padding: 16, marginBottom: 12, background: C.card, border: `1px solid ${C.line}`, ...style }}>{children}</div>;
+}
+function SectionTitle({ children }) {
+  return <div style={{ fontFamily: serif, fontSize: 23, fontWeight: 600, color: C.ink, margin: "18px 0 10px" }}>{children}</div>;
+}
+const inpStyle = { border: `1.5px solid ${C.line}`, borderRadius: 12, padding: "8px 12px", fontFamily: sans, fontSize: 15, background: "#10161D", color: C.ink };
+
+/* ------------------------------ check-in form ------------------------------ */
+function CheckinForm({ kind, initial, onSave, pmdd }) {
+  const [f, setF] = useState(initial || { energy: 3, mood: 3, anxiety: 2, sleepH: "", rested: false, appetite: "normal", weather: {}, dose: "" });
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const setW = (k) => setF((p) => ({ ...p, weather: { ...p.weather, [k]: !p.weather?.[k] } }));
+  return (
+    <div>
+      <Field label="Energy right now"><Dots value={f.energy} onChange={(v) => set("energy", v)} color={C.full} /></Field>
+      <Field label="Mood"><Dots value={f.mood} onChange={(v) => set("mood", v)} color={C.mid} /></Field>
+      <Field label="Anxiety"><Dots value={f.anxiety} onChange={(v) => set("anxiety", v)} color={C.low} /></Field>
+      {kind === "morning" && (
+        <React.Fragment>
+          <Field label="Last night's sleep">
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <input type="number" step="0.5" min="0" max="14" value={f.sleepH}
+                onChange={(e) => set("sleepH", e.target.value)} placeholder="hours"
+                style={{ ...inpStyle, width: 90 }} />
+              <Chip active={f.rested} onClick={() => set("rested", !f.rested)}>felt rested</Chip>
+            </div>
+          </Field>
+          <Field label="Appetite">
+            <div style={{ display: "flex", gap: 8 }}>
+              {["low", "normal", "high"].map((a) => <Chip key={a} active={f.appetite === a} onClick={() => set("appetite", a)}>{a}</Chip>)}
+            </div>
+          </Field>
+          <Field label="Outside today">
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {[["heat", "heat"], ["smog", "smog"], ["rain", "rain"], ["pressure", "pressure"]].map(([k, l]) =>
+                <Chip key={k} active={!!f.weather?.[k]} onClick={() => setW(k)}>{l}</Chip>)}
+            </div>
+          </Field>
+          {pmdd && (
+            <Field label="Sertraline today (log only — per your prescriber's plan)">
+              <div style={{ display: "flex", gap: 8 }}>
+                {["75", "100"].map((d) => <Chip key={d} active={f.dose === d} onClick={() => set("dose", f.dose === d ? "" : d)}>{d} mg</Chip>)}
+              </div>
+            </Field>
+          )}
+        </React.Fragment>
+      )}
+      <button onClick={() => onSave(f)}
+        style={{ width: "100%", padding: "12px 0", borderRadius: 12, marginTop: 4, background: C.sea, color: "#10161D", fontFamily: sans, fontWeight: 800, fontSize: 15 }}>
+        Save {kind} check-in
+      </button>
+    </div>
+  );
+}
+
+/* ------------------------------ Today tab ------------------------------ */
+function TodayTab({ state, setState }) {
+  const tk = todayKey();
+  const day = state.days[tk] || {};
+  const cycle = cycleInfo(state.settings);
+  const [openCheckin, setOpenCheckin] = useState(day.morning ? null : "morning");
+  const [whyOpen, setWhyOpen] = useState(false);
+
+  const latest = day.evening || day.midday || day.morning;
+  const morning = day.morning;
+  const result = useMemo(() => (latest ? computeTier({ ...latest, sleepH: morning?.sleepH, rested: morning?.rested, weather: morning?.weather }, cycle) : null), [latest, morning, state.settings.lastPeriodStart]);
+
+  const strengthWk = strengthThisWeek(state.workouts.history);
+  const lastStrength = state.workouts.history.length ? parseKey(state.workouts.history[state.workouts.history.length - 1].date) : null;
+  const strengthDue = strengthWk < 3 && (!lastStrength || daysBetween(lastStrength, new Date()) >= 1);
+  const split = nextSplit(state.workouts.lastType);
+  const prepGap = state.prep.lastDate ? daysBetween(parseKey(state.prep.lastDate), new Date()) : 99;
+  const cleanGap = state.clean.lastDate ? daysBetween(parseKey(state.clean.lastDate), new Date()) : 99;
+  const prepDue = prepGap >= Number(state.settings.prepEveryDays);
+  const cleanDue = cleanGap >= Number(state.settings.cleanEveryDays);
+
+  const plan = useMemo(() => result ? makePlan(result.tier, {
+    strengthDue, split, prepDue, cleanDue,
+    anxietyHigh: (latest?.anxiety ?? 0) >= 4, pmdd: cycle?.pmdd,
+  }) : [], [result, strengthDue, prepDue, cleanDue]);
+
+  const saveCheckin = (kind, f) => {
+    setState((s) => {
+      const d = { ...(s.days[tk] || {}) };
+      d[kind] = { ...f, at: new Date().toISOString() };
+      if (kind === "morning") d.morningTier = computeTier(f, cycle).tier;
+      return { ...s, days: { ...s.days, [tk]: d } };
+    });
+    setOpenCheckin(null);
+  };
+
+  const toggleTask = (id) => {
+    setState((s) => {
+      const d = { ...(s.days[tk] || {}) };
+      const tasks = { ...(d.tasks || {}) };
+      tasks[id] = !tasks[id];
+      let workouts = s.workouts;
+      if (id === "strength") {
+        if (tasks[id]) workouts = { lastType: split, history: [...s.workouts.history, { date: tk, type: split }] };
+        else workouts = { ...s.workouts, history: s.workouts.history.filter((h) => h.date !== tk) };
+      }
+      let prep = s.prep, clean = s.clean;
+      if (id === "prep" && tasks[id]) prep = { lastDate: tk };
+      if (id === "clean" && tasks[id]) clean = { lastDate: tk };
+      return { ...s, days: { ...s.days, [tk]: { ...d, tasks } }, workouts, prep, clean };
+    });
+  };
+
+  const morningTier = day.morningTier;
+  const shifted = result && morningTier && result.tier !== morningTier;
+  const tierRank = { low: 0, mid: 1, full: 2 };
+
+  if (!state.settings.lastPeriodStart) {
+    return (
+      <Card>
+        <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 600, color: C.ink, marginBottom: 6 }}>Set your cycle first</div>
+        <div style={{ fontFamily: sans, fontSize: 14, color: C.mist }}>
+          Tide plans your day around your cycle, sleep, weather and how you actually feel. One date to start: when did your last period begin? → Settings tab.
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div>
+      {cycle && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          <span style={{ padding: "5px 12px", borderRadius: 99, background: C.ink, color: C.sand, fontFamily: sans, fontSize: 12, fontWeight: 800 }}>
+            Cycle day {cycle.day} · {cycle.phase}
+          </span>
+          {cycle.pmdd && <span style={{ padding: "5px 12px", borderRadius: 99, background: "#332B47", color: "#CFBEE9", fontFamily: sans, fontSize: 12, fontWeight: 700 }}>PMDD window (est.)</span>}
+          <span style={{ fontFamily: sans, fontSize: 12, color: C.mist }}>estimates — your cycle varies 30–40 d</span>
+        </div>
+      )}
+
+      {result ? (
+        <Card style={{ background: TIERS[result.tier].bg, border: `1.5px solid ${TIERS[result.tier].color}44` }}>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: TIERS[result.tier].color, fontWeight: 800 }}>Today reads as</div>
+              <div style={{ fontFamily: serif, fontSize: 34, fontWeight: 700, color: C.ink, lineHeight: 1.1 }}>{TIERS[result.tier].name}</div>
+            </div>
+            <WavesI size={34} color={TIERS[result.tier].color} sw={1.6} />
+          </div>
+          <div style={{ margin: "12px 0 8px", borderRadius: 99, overflow: "hidden", height: 10, background: "#0E141BAA", border: `1px solid ${C.line}` }}>
+            <div style={{ height: "100%", width: result.tier === "full" ? "88%" : result.tier === "mid" ? "55%" : "24%", background: TIERS[result.tier].color, borderRadius: 99, transition: "width .6s ease" }} />
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 14, color: C.ink }}>{TIERS[result.tier].line}</div>
+          {shifted && (
+            <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 12, background: "#0E141BB0", fontFamily: sans, fontSize: 13, color: C.ink }}>
+              {tierRank[result.tier] < tierRank[morningTier]
+                ? "The day shifted down since morning — the plan adapted with it. Nothing was lost; the scope just got honest."
+                : "You've climbed since morning — optional add-ons unlocked below. Only if you want them."}
+            </div>
+          )}
+          <button onClick={() => setWhyOpen(!whyOpen)}
+            style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8, fontFamily: sans, fontSize: 13, fontWeight: 800, color: TIERS[result.tier].color }}>
+            Why this read {whyOpen ? <ChevU size={15} /> : <ChevD size={15} />}
+          </button>
+          {whyOpen && (
+            <div style={{ marginTop: 8 }}>
+              {result.reasons.map((r, i) => (
+                <div key={i} style={{ fontFamily: sans, fontSize: 13.5, color: C.ink, padding: "5px 0", borderTop: i ? `1px solid ${C.line}` : "none" }}>{r}</div>
+              ))}
+              <div style={{ fontFamily: sans, fontSize: 11.5, color: C.mist, marginTop: 8 }}>
+                Reasoning follows well-established sleep, exercise and cycle physiology. Guidance, not medical advice — medication decisions stay with you and your prescriber.
+              </div>
+            </div>
+          )}
+        </Card>
+      ) : (
+        <Card><div style={{ fontFamily: sans, fontSize: 14, color: C.mist }}>Do the morning check-in — Tide will read the day and size the plan.</div></Card>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        {["morning", "midday", "evening"].map((k) => {
+          const done = !!day[k];
+          const Icon = k === "morning" ? SunI : k === "midday" ? WavesI : MoonI;
+          return (
+            <button key={k} onClick={() => setOpenCheckin(openCheckin === k ? null : k)}
+              style={{
+                flex: 1, padding: "10px 0", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                background: done ? C.ink : C.card, color: done ? C.sand : C.ink,
+                border: `1.5px solid ${done ? C.ink : C.line}`, fontFamily: sans, fontSize: 12.5, fontWeight: 700,
+              }}>
+              <Icon size={14} />{k}{done && <CheckI size={13} />}
+            </button>
+          );
+        })}
+      </div>
+      {openCheckin && (
+        <Card>
+          <div style={{ fontFamily: serif, fontSize: 21, fontWeight: 600, color: C.ink, marginBottom: 10 }}>
+            {openCheckin === "morning" ? "Morning check-in" : openCheckin === "midday" ? "Midday recalibration" : "Evening check-in"}
+          </div>
+          {openCheckin !== "morning" && (
+            <div style={{ fontFamily: sans, fontSize: 13, color: C.mist, marginBottom: 10 }}>
+              States are volatile — that's normal, not a failure of the morning plan. Tide re-reads the day from here.
+            </div>
+          )}
+          <CheckinForm kind={openCheckin} initial={day[openCheckin]} pmdd={cycle?.pmdd} onSave={(f) => saveCheckin(openCheckin, f)} />
+        </Card>
+      )}
+
+      {result && (
+        <React.Fragment>
+          <SectionTitle>Today's plan</SectionTitle>
+          {["Move", "Fuel", "Home", "Mind", "Wind-down"].map((sec) => {
+            const items = plan.filter((p) => p.section === sec);
+            if (!items.length && !(sec === "Home" && cleanDue && result.tier === "low")) return null;
+            return (
+              <Card key={sec}>
+                <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: 1.4, textTransform: "uppercase", color: C.mist, fontWeight: 800, marginBottom: 6 }}>{sec}</div>
+                {items.map((it) => (
+                  <TaskRow key={it.id} item={it} done={!!day.tasks?.[it.id]} onToggle={() => toggleTask(it.id)} />
+                ))}
+                {sec === "Home" && cleanDue && result.tier === "low" && (
+                  <div style={{ fontFamily: sans, fontSize: 13, color: C.mist, fontStyle: "italic" }}>
+                    Home reset is due but not today — it rolls to the next steadier day. That's the system working, not you failing.
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+
+          <SectionTitle>Rhythm</SectionTitle>
+          <Card>
+            <RhythmRow color={C.full} label={`Strength this week: ${strengthWk}/3`} sub={`Next session: ${split}`} />
+            <RhythmRow color={C.mid} label={prepDue ? "Prep is due" : `Prep done ${prepGap === 0 ? "today" : prepGap + "d ago"}`} sub={`Every ${state.settings.prepEveryDays} days`} />
+            <RhythmRow color={C.low} label={cleanDue ? "Home reset is due" : `Home reset ${cleanGap === 0 ? "today" : cleanGap + "d ago"}`} sub={`Every ${state.settings.cleanEveryDays} days`} last />
+          </Card>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+function TaskRow({ item, done, onToggle }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ borderTop: `1px solid ${C.line}`, padding: "10px 0" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <button onClick={onToggle}
+          style={{ marginTop: 2, width: 24, height: 24, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: `1.8px solid ${done ? C.full : C.line}`, background: done ? C.full : "transparent" }}>
+          {done && <CheckI size={14} color="#10161D" />}
+        </button>
+        <div style={{ flex: 1 }} onClick={() => setOpen(!open)}>
+          <div style={{ fontFamily: sans, fontSize: 15, fontWeight: 600, color: done ? C.mist : C.ink, textDecoration: done ? "line-through" : "none" }}>{item.label}</div>
+          {open && item.detail && <div style={{ fontFamily: sans, fontSize: 13, color: C.mist, marginTop: 4 }}>{item.detail}</div>}
+        </div>
+        {item.detail && <button onClick={() => setOpen(!open)}>{open ? <ChevU size={16} color={C.mist} /> : <ChevD size={16} color={C.mist} />}</button>}
+      </div>
+    </div>
+  );
+}
+function RhythmRow({ color, label, sub, last }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: last ? "none" : `1px solid ${C.line}` }}>
+      <span style={{ width: 10, height: 10, borderRadius: 99, background: color, flexShrink: 0 }} />
+      <div>
+        <div style={{ fontFamily: sans, fontSize: 14.5, fontWeight: 600, color: C.ink }}>{label}</div>
+        <div style={{ fontFamily: sans, fontSize: 12, color: C.mist }}>{sub}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ Meals tab ------------------------------ */
+function MealsTab({ state }) {
+  const tk = todayKey();
+  const day = state.days[tk] || {};
+  const cycle = cycleInfo(state.settings);
+  const latest = day.evening || day.midday || day.morning;
+  const tier = latest ? computeTier({ ...latest, sleepH: day.morning?.sleepH, rested: day.morning?.rested, weather: day.morning?.weather }, cycle).tier : "mid";
+  const maxEffortByTier = { low: 1, mid: 2, full: 3 };
+
+  const [taste, setTaste] = useState("any");
+  const [effort, setEffort] = useState("auto");
+  const [have, setHave] = useState([]);
+  const toggleHave = (k) => setHave((p) => (p.includes(k) ? p.filter((x) => x !== k) : [...p, k]));
+
+  const maxE = effort === "auto" ? maxEffortByTier[tier] : EFFORT[effort];
+  const list = MEALS.filter((m) =>
+    EFFORT[m.e] <= maxE &&
+    (taste === "any" || m.taste === taste) &&
+    (have.length === 0 || m.needs.every((n) => have.includes(n)))
+  );
+  const groups = ["breakfast", "lunch", "dinner", "snack"];
+
+  return (
+    <div>
+      <Card style={{ background: TIERS[tier].bg }}>
+        <div style={{ fontFamily: sans, fontSize: 13.5, color: C.ink }}>
+          Filtered for <b>{TIERS[tier].name}</b> — {tier === "low" ? "no-cook & quick only. The stove owes you nothing today." : tier === "mid" ? "up to normal cooking, no marathon recipes." : "everything's on the table, including bake-and-batch."}
+        </div>
+        {cycle?.pmdd && day.morning?.appetite === "high" && (
+          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.mist, marginTop: 6 }}>
+            Higher appetite in the luteal phase is physiology, not weak will. Planned snacks beat willpower.
+          </div>
+        )}
+      </Card>
+
+      <Field label="Craving">
+        <div style={{ display: "flex", gap: 8 }}>
+          {["any", "sweet", "savory"].map((t) => <Chip key={t} active={taste === t} onClick={() => setTaste(t)}>{t}</Chip>)}
+        </div>
+      </Field>
+      <Field label="Effort override">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {["auto", "none", "quick", "cook", "bake"].map((e) => <Chip key={e} active={effort === e} onClick={() => setEffort(e)}>{e === "auto" ? "auto (by tide)" : EFFORT_LABEL[e]}</Chip>)}
+        </div>
+      </Field>
+      <Field label="What's in the fridge (optional — filters to what you can make now)">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {STAPLES.map(([k, l]) => <Chip key={k} active={have.includes(k)} onClick={() => toggleHave(k)}>{l}</Chip>)}
+        </div>
+      </Field>
+
+      {groups.map((g) => {
+        const items = list.filter((m) => m.t === g);
+        if (!items.length) return null;
+        return (
+          <div key={g}>
+            <SectionTitle>{g[0].toUpperCase() + g.slice(1)}</SectionTitle>
+            {items.map((m) => (
+              <Card key={m.n} style={{ padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.ink }}>{m.n}</div>
+                  <span style={{ padding: "3px 8px", borderRadius: 99, flexShrink: 0, background: C.sand, fontFamily: sans, fontSize: 11, fontWeight: 700, color: C.mist }}>~{m.k} kcal</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ padding: "2px 8px", borderRadius: 99, background: EFFORT[m.e] <= 1 ? C.fullBg : C.midBg, fontFamily: sans, fontSize: 11, fontWeight: 700, color: EFFORT[m.e] <= 1 ? C.full : C.mid }}>{EFFORT_LABEL[m.e]}</span>
+                  <span style={{ fontFamily: sans, fontSize: 12, color: C.mist }}>{m.needs.map((n) => STAPLES.find((s) => s[0] === n)?.[1]).join(" · ")}</span>
+                </div>
+                {m.note && <div style={{ fontFamily: sans, fontSize: 12.5, color: C.mist, marginTop: 6, fontStyle: "italic" }}>{m.note}</div>}
+              </Card>
+            ))}
+          </div>
+        );
+      })}
+      {list.length === 0 && <Card><div style={{ fontFamily: sans, fontSize: 14, color: C.mist }}>Nothing matches these filters — widen the fridge selection or effort level.</div></Card>}
+      <div style={{ fontFamily: sans, fontSize: 11.5, color: C.mist, margin: "6px 2px 20px" }}>
+        Portions & calories follow your trainer's plan (~350 / 400 / 300–350 / 150–200). Cooked-fish recipes are left out on purpose — cured and canned only.
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ Progress tab ------------------------------ */
+function MiniChart({ data }) {
+  const W = 340, H = 190, pL = 26, pR = 8, pT = 10, pB = 22;
+  const n = data.length;
+  const x = (i) => pL + i * ((W - pL - pR) / Math.max(n - 1, 1));
+  const y = (v) => pT + (1 - v / 10) * (H - pT - pB);
+  const series = [
+    ["energy", C.full], ["mood", C.mid], ["sleep", C.low],
+  ];
+  const pathFor = (key) => {
+    let dstr = "", pen = false;
+    data.forEach((d, i) => {
+      const v = d[key];
+      if (v == null || v === "") { pen = false; return; }
+      dstr += (pen ? " L" : " M") + x(i).toFixed(1) + " " + y(Number(v)).toFixed(1);
+      pen = true;
+    });
+    return dstr;
+  };
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }}>
+        {[0, 5, 10].map((g) => (
+          <g key={g}>
+            <line x1={pL} y1={y(g)} x2={W - pR} y2={y(g)} stroke={C.line} strokeDasharray="3 3" strokeWidth="1" />
+            <text x={pL - 6} y={y(g) + 3.5} textAnchor="end" fontSize="9" fill={C.mist} fontFamily={sans}>{g}</text>
+          </g>
+        ))}
+        {n > 0 && [0, Math.floor((n - 1) / 2), n - 1].filter((v, i, a) => a.indexOf(v) === i).map((i) => (
+          <text key={i} x={x(i)} y={H - 6} textAnchor="middle" fontSize="9" fill={C.mist} fontFamily={sans}>{data[i].date}</text>
+        ))}
+        {series.map(([key, col]) => (
+          <path key={key} d={pathFor(key)} fill="none" stroke={col} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        ))}
+        {series.map(([key, col]) =>
+          data.map((d, i) => (d[key] == null || d[key] === "") ? null : (
+            <circle key={key + i} cx={x(i)} cy={y(Number(d[key]))} r="2.2" fill={col} />
+          ))
+        )}
+      </svg>
+      <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 4 }}>
+        {series.map(([key, col]) => (
+          <span key={key} style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: sans, fontSize: 12, color: C.mist }}>
+            <span style={{ width: 9, height: 9, borderRadius: 99, background: col }} />{key}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProgressTab({ state, setState }) {
+  const entries = Object.entries(state.days).sort((a, b) => a[0].localeCompare(b[0])).slice(-14);
+  const data = entries.map(([k, d]) => ({
+    date: k.slice(5),
+    energy: d.morning?.energy ?? null,
+    mood: d.morning?.mood ?? null,
+    sleep: d.morning?.sleepH ? Number(d.morning.sleepH) : null,
+  }));
+  const withSleep = entries.map(([, d]) => d.morning).filter((m) => m && m.sleepH);
+  const good = withSleep.filter((m) => Number(m.sleepH) >= 7).map((m) => m.energy);
+  const bad = withSleep.filter((m) => Number(m.sleepH) < 6.5).map((m) => m.energy);
+  const avg = (a) => (a.length ? (a.reduce((x, y) => x + y, 0) / a.length).toFixed(1) : null);
+
+  const [w, setW] = useState({ kg: "", waist: "", hips: "" });
+  const addWeight = () => {
+    if (!w.kg) return;
+    setState((s) => ({ ...s, weights: [...s.weights, { date: todayKey(), ...w }] }));
+    setW({ kg: "", waist: "", hips: "" });
+  };
+
+  return (
+    <div>
+      <SectionTitle>Last 14 days</SectionTitle>
+      <Card>
+        {data.length >= 2 ? <MiniChart data={data} /> :
+          <div style={{ fontFamily: sans, fontSize: 14, color: C.mist }}>Two mornings of check-ins and the picture starts here.</div>}
+      </Card>
+
+      <SectionTitle>What the data says</SectionTitle>
+      <Card>
+        {good.length >= 3 && bad.length >= 3 ? (
+          <div style={{ fontFamily: sans, fontSize: 14.5, color: C.ink }}>
+            After <b>7h+ sleep</b> your average morning energy is <b>{avg(good)}/5</b>; after <b>&lt;6.5h</b> it's <b>{avg(bad)}/5</b>. This is your own data — the strongest argument for the wind-down there is.
+          </div>
+        ) : (
+          <div style={{ fontFamily: sans, fontSize: 14, color: C.mist }}>
+            Correlations unlock once there are ~3+ short-sleep and 3+ full-sleep mornings logged. No streaks here on purpose — patterns, not pressure.
+          </div>
+        )}
+      </Card>
+
+      <SectionTitle>Body (weekly is plenty)</SectionTitle>
+      <Card>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          {[["kg", "kg"], ["waist", "waist cm"], ["hips", "hips cm"]].map(([k, ph]) => (
+            <input key={k} type="number" step="0.1" placeholder={ph} value={w[k]}
+              onChange={(e) => setW((p) => ({ ...p, [k]: e.target.value }))}
+              style={{ ...inpStyle, flex: 1, minWidth: 0, fontSize: 14 }} />
+          ))}
+          <button onClick={addWeight} style={{ padding: "0 12px", borderRadius: 12, flexShrink: 0, background: C.sea, color: "#10161D", display: "flex", alignItems: "center" }}><PlusI size={16} /></button>
+        </div>
+        {state.weights.slice(-8).reverse().map((r, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 13.5, color: C.ink, padding: "6px 0", borderTop: `1px solid ${C.line}` }}>
+            <span style={{ color: C.mist }}>{r.date}</span>
+            <span>{r.kg} kg{r.waist ? ` · waist ${r.waist}` : ""}{r.hips ? ` · hips ${r.hips}` : ""}</span>
+          </div>
+        ))}
+        {state.weights.length === 0 && <div style={{ fontFamily: sans, fontSize: 13, color: C.mist }}>Optional. Weight swings within the cycle are normal — compare same-phase weeks, not neighbouring days.</div>}
+      </Card>
+    </div>
+  );
+}
+
+/* ------------------------------ Settings tab ------------------------------ */
+function SettingsTab({ state, setState }) {
+  const s = state.settings;
+  const set = (k, v) => setState((p) => ({ ...p, settings: { ...p.settings, [k]: v } }));
+  const [io, setIo] = useState("");
+  const [showIo, setShowIo] = useState(false);
+  const doImport = () => {
+    try {
+      const parsed = JSON.parse(io);
+      setState({ ...DEFAULT_STATE, ...parsed });
+      setIo(""); setShowIo(false);
+    } catch { alert("That doesn't parse as Tide data — check the paste."); }
+  };
+  return (
+    <div>
+      <SectionTitle>Cycle</SectionTitle>
+      <Card>
+        <Field label="Last period started">
+          <input type="date" value={s.lastPeriodStart} onChange={(e) => set("lastPeriodStart", e.target.value)}
+            style={{ ...inpStyle, width: "100%" }} />
+        </Field>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Field label="Avg cycle (days)">
+            <input type="number" value={s.cycleLen} onChange={(e) => set("cycleLen", e.target.value)} style={{ ...inpStyle, width: 90 }} />
+          </Field>
+          <Field label="Period length">
+            <input type="number" value={s.periodLen} onChange={(e) => set("periodLen", e.target.value)} style={{ ...inpStyle, width: 90 }} />
+          </Field>
+        </div>
+        <div style={{ fontFamily: sans, fontSize: 12, color: C.mist }}>
+          Your cycle runs 30–40 days, so phases are estimates. Update the start date on day 1 each cycle — that one tap keeps everything honest.
+        </div>
+      </Card>
+
+      <SectionTitle>Cadence</SectionTitle>
+      <Card>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Field label="Home reset every (days)">
+            <input type="number" min="3" max="21" value={s.cleanEveryDays} onChange={(e) => set("cleanEveryDays", e.target.value)} style={{ ...inpStyle, width: 90 }} />
+          </Field>
+          <Field label="Prep every (days)">
+            <input type="number" min="1" max="7" value={s.prepEveryDays} onChange={(e) => set("prepEveryDays", e.target.value)} style={{ ...inpStyle, width: 90 }} />
+          </Field>
+        </div>
+        <div style={{ fontFamily: sans, fontSize: 12, color: C.mist }}>Home reset 7–14 days as you asked; veg & protein prep every 2–3.</div>
+      </Card>
+
+      <SectionTitle>Your data</SectionTitle>
+      <Card>
+        <div style={{ fontFamily: sans, fontSize: 13.5, color: C.ink, marginBottom: 10 }}>
+          Everything is stored on this phone, in this browser — nothing leaves your device. A new phone starts empty, so export a backup now and then (once a week is plenty).
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => { setIo(JSON.stringify(state)); setShowIo(true); }} style={{ flex: 1, padding: "10px 0", borderRadius: 12, border: `1.5px solid ${C.ink}`, fontFamily: sans, fontWeight: 700, fontSize: 13, color: C.ink }}>Export backup</button>
+          <button onClick={() => { setIo(""); setShowIo(true); }} style={{ flex: 1, padding: "10px 0", borderRadius: 12, border: `1.5px solid ${C.line}`, fontFamily: sans, fontWeight: 700, fontSize: 13, color: C.mist }}>Import</button>
+        </div>
+        {showIo && (
+          <div style={{ marginTop: 12 }}>
+            <textarea value={io} onChange={(e) => setIo(e.target.value)} rows={5}
+              style={{ ...inpStyle, width: "100%", fontSize: 11 }} placeholder="Paste a backup here to import" />
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button onClick={doImport} style={{ padding: "8px 16px", borderRadius: 12, background: C.sea, color: "#10161D", fontFamily: sans, fontWeight: 800, fontSize: 13 }}>Load import</button>
+              <button onClick={() => setShowIo(false)} style={{ padding: "8px 16px", borderRadius: 12, fontFamily: sans, fontWeight: 700, fontSize: 13, color: C.mist }}>Close</button>
+            </div>
+            <div style={{ fontFamily: sans, fontSize: 11.5, color: C.mist, marginTop: 6 }}>To back up: select all the text above and copy it somewhere safe (notes, file).</div>
+          </div>
+        )}
+      </Card>
+
+      <div style={{ fontFamily: sans, fontSize: 11.5, color: C.mist, margin: "4px 2px 24px", lineHeight: 1.5 }}>
+        Tide sizes days by well-established sleep, exercise and menstrual-cycle physiology. It is a planning aid, not medical advice, and it never judges a Low tide day. Sertraline logging is a diary feature only — dosing follows the plan agreed with your prescriber.
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------ App ------------------------------ */
+function App() {
+  const [state, setState] = useState(loadState);
+  const [tab, setTab] = useState("today");
+  useEffect(() => { saveState(state); }, [state]);
+
+  const tabs = [
+    ["today", "Today", WavesI],
+    ["meals", "Meals", BowlI],
+    ["progress", "Progress", ActivityI],
+    ["settings", "Settings", SlidersI],
+  ];
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.sand }}>
+      <div style={{ maxWidth: 448, margin: "0 auto", padding: "calc(env(safe-area-inset-top, 0px) + 20px) 16px 120px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+          <div style={{ fontFamily: serif, fontSize: 30, fontWeight: 700, color: C.ink, letterSpacing: 0.2 }}>Tide</div>
+          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.mist }}>{niceDate(new Date())}</div>
+        </div>
+        <div style={{ fontFamily: sans, fontSize: 12.5, color: C.mist, marginBottom: 14 }}>Your day, right-sized.</div>
+
+        {tab === "today" && <TodayTab state={state} setState={setState} />}
+        {tab === "meals" && <MealsTab state={state} />}
+        {tab === "progress" && <ProgressTab state={state} setState={setState} />}
+        {tab === "settings" && <SettingsTab state={state} setState={setState} />}
+      </div>
+
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: C.card, borderTop: `1px solid ${C.line}`, paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+        <div style={{ maxWidth: 448, margin: "0 auto", display: "flex" }}>
+          {tabs.map(([id, label, Icon]) => (
+            <button key={id} onClick={() => setTab(id)}
+              style={{ flex: 1, padding: "12px 0 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+              <Icon size={19} color={tab === id ? C.sea : C.mist} sw={tab === id ? 2.4 : 1.8} />
+              <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 700, color: tab === id ? C.sea : C.mist }}>{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
